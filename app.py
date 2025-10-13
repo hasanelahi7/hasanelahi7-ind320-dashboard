@@ -74,27 +74,33 @@ elif page == "Data Visualization":
     # Calculate data range based on selected months
     hours_per_month = len(df) // 12
     end_idx = selected_range * hours_per_month
-    plot_data = df.head(end_idx)
+    plot_data = df.head(end_idx).copy()
+    
+    # Convert time column to datetime
+    plot_data['time'] = pd.to_datetime(df['time'].head(end_idx))
     
     # Create plot based on selection
     if selected_column == "All columns":
         fig = go.Figure()
         for col in columns_to_plot:
             fig.add_trace(go.Scatter(
+                x=plot_data['time'],
                 y=plot_data[col],
                 name=col,
                 mode='lines'
             ))
         fig.update_layout(
             title="All Weather Variables Over Time",
-            xaxis_title="Time Index",
+            xaxis_title="Date",
             yaxis_title="Values (Mixed Units)"
         )
     else:
-        fig = px.line(plot_data, y=selected_column, 
+        fig = px.line(plot_data, 
+                     x='time',
+                     y=selected_column, 
                      title=f"{selected_column} Over Time")
         fig.update_layout(
-            xaxis_title="Time Index",
+            xaxis_title="Date",
             yaxis_title=selected_column
         )
     
