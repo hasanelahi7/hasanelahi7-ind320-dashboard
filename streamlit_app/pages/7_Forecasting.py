@@ -266,7 +266,11 @@ if st.button("🚀 Run Forecast", type="primary"):
                 weather_df = fetch_weather_data(lat, lon, start_year, end_year)
 
                 if weather_df is None:
-                    st.warning("⚠️ Could not fetch weather data, proceeding without exogenous variables")
+                    st.warning(
+                        "⚠️ **Weather data unavailable** — Historical weather data not found for the selected date range. "
+                        "The forecast will proceed using SARIMAX without exogenous variables (weather data). "
+                        "This is still a valid forecast, but won't account for weather patterns."
+                    )
                     use_exog = False
                 else:
                     weather_df = weather_df.set_index("time")
