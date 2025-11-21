@@ -7,7 +7,7 @@
 ## Links
 
 - **GitHub:** https://github.com/hasanelahi7/hasanelahi7-ind320-dashboard
-- **Streamlit App:** https://hasanelahi7-ind320-dashboard.streamlit.app/
+- **Streamlit App:** https://hasanelahi7-ind320-dashboard-final.streamlit.app/
 
 ## Overview
 
@@ -79,6 +79,6 @@ jupyter nbconvert --to html notebooks/IND320_Part4.ipynb
 **Submit to Canvas:**
 - Notebook PDF/HTML (IND320_Part4.html)
 - Repo link: https://github.com/hasanelahi7/hasanelahi7-ind320-dashboard
-- App link: https://hasanelahi7-ind320-dashboard.streamlit.app/
+- App link: https://hasanelahi7-ind320-dashboard-final.streamlit.app/
 
-**Note:** All notebooks (Part1-4) are in this single repository as per instructor feedback.
+**Note:** All notebooks (Part1-4) are in this single repository as per instructor feedback. The Streamlit app URL was updated to `-final` to reflect the consolidated final version of all assignments.
