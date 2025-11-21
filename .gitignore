@@ -211,4 +211,5 @@ IMPLEMENTATION_SUMMARY.md
 task_info.txt
 create_cassandra_tables.py
 *.html
-.streamlit/secrets.toml
+.streamlit/
+**/secrets.toml
