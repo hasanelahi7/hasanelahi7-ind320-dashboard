@@ -249,7 +249,13 @@ if st.button("🚀 Run Forecast", type="primary"):
         if use_exog and exog_vars:
             with st.spinner("Fetching weather data..."):
                 start_year = train_data.index.min().year
-                end_year = train_data.index.max().year + 1
+                end_year = train_data.index.max().year
+
+                # Ensure we don't request future data from ERA5 archive
+                import datetime
+                current_year = datetime.datetime.now().year
+                if end_year > current_year - 1:
+                    end_year = current_year - 1  # ERA5 archive lags by about a year
 
                 weather_df = fetch_weather_data(lat, lon, start_year, end_year)
 
