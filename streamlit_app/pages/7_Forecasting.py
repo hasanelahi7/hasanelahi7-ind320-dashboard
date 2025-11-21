@@ -102,25 +102,31 @@ def fetch_weather_data(lat: float, lon: float, start_year: int, end_year: int):
     try:
         all_dfs = []
         for year in range(start_year, end_year + 1):
-            url = "https://archive-api.open-meteo.com/v1/era5"
-            params = {
-                "latitude": lat,
-                "longitude": lon,
-                "start_date": f"{year}-01-01",
-                "end_date": f"{year}-12-31",
-                "hourly": "temperature_2m,precipitation,wind_speed_10m",
-                "timezone": "UTC",
-            }
-            response = requests.get(url, params=params, timeout=60)
-            response.raise_for_status()
-            js = response.json()
-            df = pd.DataFrame(js["hourly"])
-            df["time"] = pd.to_datetime(df["time"], utc=True)
-            all_dfs.append(df)
+            try:
+                url = "https://archive-api.open-meteo.com/v1/era5"
+                params = {
+                    "latitude": lat,
+                    "longitude": lon,
+                    "start_date": f"{year}-01-01",
+                    "end_date": f"{year}-12-31",
+                    "hourly": "temperature_2m,precipitation,wind_speed_10m",
+                    "timezone": "UTC",
+                }
+                response = requests.get(url, params=params, timeout=60)
+                response.raise_for_status()
+                js = response.json()
+                df = pd.DataFrame(js["hourly"])
+                df["time"] = pd.to_datetime(df["time"], utc=True)
+                all_dfs.append(df)
+            except:
+                # Skip years that don't have data (e.g., future years)
+                continue
+
+        if not all_dfs:
+            return None
 
         return pd.concat(all_dfs, ignore_index=True).sort_values("time")
     except Exception as e:
-        st.error(f"Error fetching weather data: {e}")
         return None
 
 # ---------- Forecasting Function ----------
