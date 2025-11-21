@@ -38,7 +38,7 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("""
     **🔋 Energy Data**
-    - Production data (2021-2024) from Elhub API
+    - Production data (2022-2024) from Elhub API
     - Consumption data (2021-2024) from Elhub API
     - Analysis by price areas (NO1-NO5)
     - Multiple energy sources tracked
@@ -128,7 +128,7 @@ with col2:
     st.markdown("""
     **Links:**
     - [GitHub Repository](https://github.com/hasanelahi7/hasanelahi7-ind320-dashboard)
-    - [Streamlit App](https://hasanelahi7-ind320-dashboard.streamlit.app/)
+    - [Streamlit App](https://hasanelahi7-ind320-dashboard-final.streamlit.app/)
     """)
 
 st.markdown("""
