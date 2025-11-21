@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 import requests
 from pymongo import MongoClient
 from datetime import datetime, timedelta
+import json
+from pathlib import Path
 
 st.set_page_config(page_title="Interactive Map", layout="wide")
 
@@ -28,14 +30,27 @@ CITY_COORDS = {
     "Bergen": (60.3913, 5.3221),
 }
 
-# Approximate boundaries for Norwegian price areas (simplified polygons)
-PRICE_AREA_BOUNDARIES = {
-    "NO1": [(59.0, 10.0), (59.0, 11.5), (60.5, 11.5), (60.5, 10.0), (59.0, 10.0)],
-    "NO2": [(57.5, 6.5), (57.5, 8.5), (59.5, 8.5), (59.5, 6.5), (57.5, 6.5)],
-    "NO3": [(62.0, 9.0), (62.0, 12.0), (64.5, 12.0), (64.5, 9.0), (62.0, 9.0)],
-    "NO4": [(68.5, 16.0), (68.5, 20.0), (70.5, 20.0), (70.5, 16.0), (68.5, 16.0)],
-    "NO5": [(59.5, 4.5), (59.5, 6.5), (61.5, 6.5), (61.5, 4.5), (59.5, 4.5)],
-}
+# Load official NVE GeoJSON data for price area boundaries
+APP_ROOT = Path(__file__).resolve().parents[1]
+GEOJSON_PATH = APP_ROOT.parent / "data" / "elspot_price_areas.geojson"
+
+@st.cache_data
+def load_geojson_boundaries():
+    """Load official NVE GeoJSON data for Elspot price areas."""
+    with open(GEOJSON_PATH, "r", encoding="utf-8") as f:
+        geojson = json.load(f)
+
+    # Parse GeoJSON features into a dict keyed by area code
+    boundaries = {}
+    for feature in geojson["features"]:
+        # ElSpotOmr is like "NO 1", "NO 2", etc - convert to "NO1", "NO2"
+        area_name = feature["properties"]["ElSpotOmr"].replace(" ", "")
+        geometry = feature["geometry"]
+        boundaries[area_name] = geometry
+
+    return boundaries
+
+PRICE_AREA_BOUNDARIES = load_geojson_boundaries()
 
 # ---------- Data Loading ----------
 
@@ -50,8 +65,15 @@ def get_mongo_client():
         return None
 
 @st.cache_data(show_spinner=False)
-def load_energy_data(area: str, data_type: str, start_date: str, end_date: str):
-    """Load energy data from MongoDB for specified time range."""
+def load_energy_data(area: str, data_type: str, start_date, end_date):
+    """Load energy data from MongoDB for specified time range.
+
+    Args:
+        area: Price area code (e.g., "NO1")
+        data_type: "production" or "consumption"
+        start_date: datetime object for range start
+        end_date: datetime object for range end
+    """
     try:
         client = get_mongo_client()
         if client is None:
@@ -112,8 +134,14 @@ def load_energy_data(area: str, data_type: str, start_date: str, end_date: str):
         return None
 
 @st.cache_data(show_spinner=False)
-def compute_area_statistics(data_type: str, start_date: str, end_date: str):
-    """Compute mean energy values for all price areas in the time interval."""
+def compute_area_statistics(data_type: str, start_date, end_date):
+    """Compute mean energy values for all price areas in the time interval.
+
+    Args:
+        data_type: "production" or "consumption"
+        start_date: datetime object for range start
+        end_date: datetime object for range end
+    """
     area_stats = {}
 
     for area in PRICE_AREAS.keys():
@@ -127,14 +155,32 @@ def compute_area_statistics(data_type: str, start_date: str, end_date: str):
 
 # ---------- Map Creation ----------
 
-def create_choropleth_map(area_stats, selected_area=None):
-    """Create an interactive Plotly map with choropleth coloring."""
+def extract_polygon_coords(geometry):
+    """Extract lat/lon coordinates from GeoJSON Polygon geometry.
 
-    # Prepare data for plotting
+    Handles both Polygon (single ring) and MultiPolygon geometries.
+    Returns list of (lat, lon) tuples for the exterior ring.
+    """
+    if geometry["type"] == "Polygon":
+        # Polygon has array of rings, first is exterior
+        coords = geometry["coordinates"][0]
+        # GeoJSON is [lon, lat], we need [lat, lon] for Plotly
+        return [(lat, lon) for lon, lat in coords]
+    elif geometry["type"] == "MultiPolygon":
+        # For MultiPolygon, use the largest polygon
+        max_ring = max(geometry["coordinates"], key=lambda poly: len(poly[0]))
+        coords = max_ring[0]
+        return [(lat, lon) for lon, lat in coords]
+    else:
+        return []
+
+def create_choropleth_map(area_stats, selected_area=None):
+    """Create an interactive Plotly map with choropleth coloring using official NVE GeoJSON data."""
+
+    # Prepare data for city markers
     lats = []
     lons = []
     texts = []
-    colors = []
 
     max_value = max(area_stats.values()) if area_stats.values() else 1
     min_value = min(area_stats.values()) if area_stats.values() else 0
@@ -146,20 +192,21 @@ def create_choropleth_map(area_stats, selected_area=None):
         value = area_stats.get(area, 0)
         texts.append(f"{area} - {city}<br>Mean: {value:,.0f} kWh")
 
-        # Normalize color (0-1 scale)
-        if max_value > min_value:
-            norm_value = (value - min_value) / (max_value - min_value)
-        else:
-            norm_value = 0.5
-        colors.append(norm_value)
-
     # Create figure
     fig = go.Figure()
 
-    # Add price area boundaries as polygons
-    for area, boundary in PRICE_AREA_BOUNDARIES.items():
-        lats_poly = [coord[0] for coord in boundary]
-        lons_poly = [coord[1] for coord in boundary]
+    # Add price area boundaries from official NVE GeoJSON
+    for area, geometry in PRICE_AREA_BOUNDARIES.items():
+        if area not in PRICE_AREAS:
+            continue  # Skip if not in our standard price areas
+
+        # Extract coordinates from GeoJSON geometry
+        boundary_coords = extract_polygon_coords(geometry)
+        if not boundary_coords:
+            continue
+
+        lats_poly = [coord[0] for coord in boundary_coords]
+        lons_poly = [coord[1] for coord in boundary_coords]
 
         value = area_stats.get(area, 0)
         if max_value > min_value:
@@ -211,7 +258,7 @@ def create_choropleth_map(area_stats, selected_area=None):
         ),
         height=600,
         margin=dict(l=0, r=0, t=30, b=0),
-        title="Norwegian Price Areas - Energy Choropleth Map",
+        title="Norwegian Price Areas - Energy Choropleth Map (NVE Official Boundaries)",
         hovermode='closest'
     )
 
@@ -239,8 +286,9 @@ with col2:
         options=["Last 7 Days", "Last 30 Days", "Last 90 Days", "Last Year", "All Data (2021-2024)"]
     )
 
-# Calculate date range
-end_date = datetime.utcnow()
+# Calculate date range (as datetime objects for MongoDB)
+from datetime import timezone
+end_date = datetime.now(timezone.utc)
 if time_preset == "Last 7 Days":
     start_date = end_date - timedelta(days=7)
 elif time_preset == "Last 30 Days":
@@ -250,10 +298,7 @@ elif time_preset == "Last 90 Days":
 elif time_preset == "Last Year":
     start_date = end_date - timedelta(days=365)
 else:  # All Data
-    start_date = datetime(2021, 1, 1)
-
-start_str = start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-end_str = end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+    start_date = datetime(2020, 1, 1, tzinfo=timezone.utc)  # Use earlier date to capture all available data
 
 # Price area selection
 selected_area = st.selectbox(
@@ -273,7 +318,7 @@ if selected_area:
 
 # Compute statistics
 with st.spinner("Computing area statistics..."):
-    area_stats = compute_area_statistics(data_type, start_str, end_str)
+    area_stats = compute_area_statistics(data_type, start_date, end_date)
 
 # Display statistics
 st.markdown("### 📊 Area Statistics")
@@ -292,7 +337,7 @@ with st.expander("ℹ️ About This Map"):
     st.markdown("""
     **Features:**
     - **Choropleth Coloring**: Areas are colored based on mean energy values (blue = low, red = high)
-    - **Price Area Boundaries**: Simplified polygons representing NO1-NO5 regions
+    - **Price Area Boundaries**: Official NVE GeoJSON data for NO1-NO5 Elspot regions
     - **Interactive**: Hover over areas to see detailed statistics
     - **Coordinate Selection**: Select an area to save coordinates for Snow Drift calculations
 
@@ -303,9 +348,11 @@ with st.expander("ℹ️ About This Map"):
     - **NO4 (Tromsø)**: Northern Norway
     - **NO5 (Bergen)**: Western Norway
 
-    **Data Source:** Elhub API via MongoDB Atlas
+    **Data Sources:**
+    - Energy Data: Elhub API via MongoDB Atlas
+    - Price Area Boundaries: NVE (Norwegian Water Resources and Energy Directorate) GeoJSON
 
-    **Note:** Boundaries are simplified approximations for visualization purposes.
+    **Note:** Price area boundaries are official data from NVE's ElSpot_omraade layer retrieved via ArcGIS REST API.
     """)
 
 # Debug info
