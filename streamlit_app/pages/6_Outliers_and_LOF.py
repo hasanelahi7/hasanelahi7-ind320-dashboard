@@ -107,7 +107,8 @@ with tab_spc:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    st.caption(f"Outliers: {int(out.sum())} / {len(s)}  ({out.mean()*100:.2f}%).  "
+    pct_outliers = out.mean() * 100
+    st.caption(f"Outliers: {int(out.sum())} / {len(s)}  ({pct_outliers:.2f}%).  "
                f"Bounds from SATV (MAD→σ): [{lo:.3f}, {hi:.3f}].")
 
 # ---------- Tab 2: LOF (Precipitation) ----------
