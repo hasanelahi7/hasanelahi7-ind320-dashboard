@@ -14,7 +14,7 @@
 Dashboard analyzing Norwegian energy production/consumption and weather data across price areas NO1-NO5. Includes time series analysis, forecasting, anomaly detection, and interactive maps.
 
 **Data sources:**
-- Elhub API (production/consumption 2021-2024)
+- Elhub API (production 2022-2024, consumption 2021-2024)
 - Open-Meteo ERA5 (weather data)
 - NVE GeoJSON (price area boundaries)
 
