@@ -90,10 +90,10 @@ Select coordinates from the Map page or use the defaults below.
 """)
 
 # Get coordinates from session state (set by Map page)
-if "selected_coords" in st.session_state and st.session_state.selected_coords:
-    default_lat, default_lon = st.session_state.selected_coords
-    selected_area = st.session_state.get("selected_area", "Custom")
-    st.success(f"✅ Using coordinates from Map: {selected_area} ({default_lat:.4f}, {default_lon:.4f})")
+if st.session_state.get('map_clicked_lat') is not None and st.session_state.get('map_clicked_lon') is not None:
+    default_lat = st.session_state['map_clicked_lat']
+    default_lon = st.session_state['map_clicked_lon']
+    st.success(f"✅ Using coordinates from Map: ({default_lat:.4f}°N, {default_lon:.4f}°E)")
 else:
     # Default to Bergen
     default_lat, default_lon = 60.3913, 5.3221

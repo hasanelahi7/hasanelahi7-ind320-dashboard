@@ -66,15 +66,29 @@ with tab_spc:
 
     # SATV pipeline
     s = pd.to_numeric(wx["temperature_2m"], errors="coerce").to_numpy()
+
+    # DCT: separate high-frequency (SATV) and low-frequency (trend) components
     x = dct(s, norm="ortho")
     cutoff = int(len(x) * dct_keep_frac)
-    x[:max(1, cutoff)] = 0.0
-    satv = idct(x, norm="ortho")
+    x_trend = x.copy()
+    x_trend[max(1, cutoff):] = 0.0  # Keep only low frequencies for trend
+    trend = idct(x_trend, norm="ortho")
+
+    x_satv = x.copy()
+    x_satv[:max(1, cutoff)] = 0.0  # Keep only high frequencies for SATV
+    satv = idct(x_satv, norm="ortho")
+
+    # SPC boundaries based on SATV (robust statistics)
     med = np.median(satv)
     mad = np.median(np.abs(satv - med)) or 1e-9
     sigma = 1.4826 * mad
-    lo, hi = med - k_sigma * sigma, med + k_sigma * sigma
-    out = (satv < lo) | (satv > hi)
+    lo_satv, hi_satv = med - k_sigma * sigma, med + k_sigma * sigma
+    out = (satv < lo_satv) | (satv > hi_satv)
+
+    # Boundaries in original temperature space = trend ± k*sigma
+    lo_bound = trend + lo_satv
+    hi_bound = trend + hi_satv
+    center_line = trend + med
 
     # Create Plotly figure
     fig = go.Figure()
@@ -85,16 +99,47 @@ with tab_spc:
         y=s,
         mode='lines',
         name='Temperature (°C)',
-        line=dict(width=1)
+        line=dict(width=1.5, color='blue')
     ))
 
-    # Add outlier markers
+    # Add SPC centerline (median/trend)
+    fig.add_trace(go.Scatter(
+        x=wx["time"],
+        y=center_line,
+        mode='lines',
+        name='SPC Centerline (Median)',
+        line=dict(color='green', width=2, dash='solid')
+    ))
+
+    # Add SPC upper control limit with shading
+    fig.add_trace(go.Scatter(
+        x=wx["time"],
+        y=hi_bound,
+        mode='lines',
+        name=f'Upper Control Limit (+{k_sigma}σ)',
+        line=dict(color='red', width=3, dash='dash'),
+        showlegend=True
+    ))
+
+    # Add SPC lower control limit with shading
+    fig.add_trace(go.Scatter(
+        x=wx["time"],
+        y=lo_bound,
+        mode='lines',
+        name=f'Lower Control Limit (-{k_sigma}σ)',
+        line=dict(color='red', width=3, dash='dash'),
+        fill='tonexty',
+        fillcolor='rgba(255, 0, 0, 0.1)',
+        showlegend=True
+    ))
+
+    # Add outlier markers (on top)
     fig.add_trace(go.Scatter(
         x=wx["time"][out],
         y=s[out],
         mode='markers',
-        name='Outliers',
-        marker=dict(size=6, color='red')
+        name='Outliers (Outside SPC Limits)',
+        marker=dict(size=8, color='darkred', symbol='x', line=dict(width=2, color='darkred'))
     ))
 
     fig.update_layout(
@@ -109,7 +154,7 @@ with tab_spc:
 
     pct_outliers = out.mean() * 100
     st.caption(f"Outliers: {int(out.sum())} / {len(s)}  ({pct_outliers:.2f}%).  "
-               f"Bounds from SATV (MAD→σ): [{lo:.3f}, {hi:.3f}].")
+               f"SATV bounds (MAD→σ): [{lo_satv:.3f}, {hi_satv:.3f}].")
 
 # ---------- Tab 2: LOF (Precipitation) ----------
 with tab_lof:

@@ -54,8 +54,11 @@ with tab_stl:
 
     col1, col2, col3, col4 = st.columns(4)
     period   = col1.number_input("Period (hours)", 24, 24*60, 24*7, step=24)
-    seasonal = col2.slider("Seasonal smoother", 7, 61, 13, step=2)
-    trend    = col3.slider("Trend smoother", 51, 601, 301, step=10)
+    seasonal = col2.slider("Seasonal smoother", 7, 365, 13, step=2)
+
+    # Calculate minimum trend value (must be >= period and odd)
+    min_trend = int(period) if int(period) % 2 == 1 else int(period) + 1
+    trend    = col3.slider("Trend smoother", min_trend, 601, max(min_trend, 301), step=2)
     robust   = col4.checkbox("Robust", value=True)
 
     s = (
@@ -68,36 +71,52 @@ with tab_stl:
     if s.empty:
         st.info("No data for the selected combination.")
     else:
-        res = STL(s, period=int(period), seasonal=int(seasonal), trend=int(trend), robust=robust).fit()
+        # Ensure trend is odd (STL requirement)
+        if int(trend) % 2 == 0:
+            trend = int(trend) + 1
 
-        # Create Plotly subplots
-        fig = make_subplots(
-            rows=4, cols=1,
-            subplot_titles=["Observed", "Trend", "Seasonal", "Residual"],
-            vertical_spacing=0.08
-        )
+        # Ensure seasonal is odd (STL requirement)
+        if int(seasonal) % 2 == 0:
+            seasonal = int(seasonal) + 1
 
-        # Add traces
-        fig.add_trace(go.Scatter(x=s.index, y=res.observed, mode='lines', name='Observed', line=dict(width=1)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=s.index, y=res.trend, mode='lines', name='Trend', line=dict(width=1)), row=2, col=1)
-        fig.add_trace(go.Scatter(x=s.index, y=res.seasonal, mode='lines', name='Seasonal', line=dict(width=1)), row=3, col=1)
-        fig.add_trace(go.Scatter(x=s.index, y=res.resid, mode='lines', name='Residual', line=dict(width=1)), row=4, col=1)
+        try:
+            res = STL(s, period=int(period), seasonal=int(seasonal), trend=int(trend), robust=robust).fit()
 
-        # Update layout
-        fig.update_layout(
-            title_text=f"STL Decomposition — area={area}, group={group}, period={period}",
-            height=700,
-            showlegend=False,
-            hovermode='x unified'
-        )
+            # Create Plotly subplots
+            fig = make_subplots(
+                rows=4, cols=1,
+                subplot_titles=["Observed", "Trend", "Seasonal", "Residual"],
+                vertical_spacing=0.08
+            )
 
-        # Update all y-axes
-        fig.update_yaxes(title_text="kWh", row=1, col=1)
-        fig.update_yaxes(title_text="kWh", row=2, col=1)
-        fig.update_yaxes(title_text="kWh", row=3, col=1)
-        fig.update_yaxes(title_text="kWh", row=4, col=1)
+            # Add traces
+            fig.add_trace(go.Scatter(x=s.index, y=res.observed, mode='lines', name='Observed', line=dict(width=1)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=s.index, y=res.trend, mode='lines', name='Trend', line=dict(width=1)), row=2, col=1)
+            fig.add_trace(go.Scatter(x=s.index, y=res.seasonal, mode='lines', name='Seasonal', line=dict(width=1)), row=3, col=1)
+            fig.add_trace(go.Scatter(x=s.index, y=res.resid, mode='lines', name='Residual', line=dict(width=1)), row=4, col=1)
 
-        st.plotly_chart(fig, use_container_width=True)
+            # Update layout
+            fig.update_layout(
+                title_text=f"STL Decomposition — area={area}, group={group}, period={period}",
+                height=700,
+                showlegend=False,
+                hovermode='x unified'
+            )
+
+            # Update all y-axes
+            fig.update_yaxes(title_text="kWh", row=1, col=1)
+            fig.update_yaxes(title_text="kWh", row=2, col=1)
+            fig.update_yaxes(title_text="kWh", row=3, col=1)
+            fig.update_yaxes(title_text="kWh", row=4, col=1)
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        except ValueError as e:
+            st.error(f"❌ STL decomposition failed: {str(e)}")
+            st.info(f"💡 **Tip:** Ensure trend smoother ({trend}) >= period ({period}). STL requires trend and seasonal to be odd numbers >= 7.")
+        except Exception as e:
+            st.error(f"❌ Unexpected error in STL decomposition: {str(e)}")
+            st.info("Try adjusting the parameters or selecting a different price area/group combination.")
 
 # ---------- Tab 2: Spectrogram ----------
 with tab_spec:

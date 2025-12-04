@@ -3,7 +3,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
+import folium
+from folium.plugins import MarkerCluster
+from streamlit_folium import st_folium
 import requests
 from pymongo import MongoClient
 from datetime import datetime, timedelta
@@ -155,122 +157,98 @@ def compute_area_statistics(data_type: str, start_date, end_date):
 
 # ---------- Map Creation ----------
 
-def extract_polygon_coords(geometry):
-    """Extract lat/lon coordinates from GeoJSON Polygon geometry.
-
-    Handles both Polygon (single ring) and MultiPolygon geometries.
-    Returns list of (lat, lon) tuples for the exterior ring.
-    """
-    if geometry["type"] == "Polygon":
-        # Polygon has array of rings, first is exterior
-        coords = geometry["coordinates"][0]
-        # GeoJSON is [lon, lat], we need [lat, lon] for Plotly
-        return [(lat, lon) for lon, lat in coords]
-    elif geometry["type"] == "MultiPolygon":
-        # For MultiPolygon, use the largest polygon
-        max_ring = max(geometry["coordinates"], key=lambda poly: len(poly[0]))
-        coords = max_ring[0]
-        return [(lat, lon) for lon, lat in coords]
+def get_color_for_value(value, min_val, max_val):
+    """Get color for choropleth based on value."""
+    if max_val > min_val:
+        norm = (value - min_val) / (max_val - min_val)
     else:
-        return []
+        norm = 0.5
+    # Blue (low) to red (high)
+    r = int(255 * norm)
+    g = int(100 * (1 - norm))
+    b = int(255 * (1 - norm))
+    return f'#{r:02x}{g:02x}{b:02x}'
 
-def create_choropleth_map(area_stats, selected_area=None):
-    """Create an interactive Plotly map with choropleth coloring using official NVE GeoJSON data."""
+def create_folium_map(area_stats, selected_area=None, clicked_coords=None):
+    """Create simple Folium map with clickable areas."""
 
-    # Prepare data for city markers
-    lats = []
-    lons = []
-    texts = []
+    # Create base map
+    m = folium.Map(location=[65.0, 13.0], zoom_start=4, tiles="OpenStreetMap")
 
+    # Get value range for coloring
     max_value = max(area_stats.values()) if area_stats.values() else 1
     min_value = min(area_stats.values()) if area_stats.values() else 0
 
-    for area, city in PRICE_AREAS.items():
-        lat, lon = CITY_COORDS[city]
-        lats.append(lat)
-        lons.append(lon)
-        value = area_stats.get(area, 0)
-        texts.append(f"{area} - {city}<br>Mean: {value:,.0f} kWh")
-
-    # Create figure
-    fig = go.Figure()
-
-    # Add price area boundaries from official NVE GeoJSON
+    # Add GeoJSON boundaries with choropleth coloring
     for area, geometry in PRICE_AREA_BOUNDARIES.items():
         if area not in PRICE_AREAS:
-            continue  # Skip if not in our standard price areas
-
-        # Extract coordinates from GeoJSON geometry
-        boundary_coords = extract_polygon_coords(geometry)
-        if not boundary_coords:
             continue
 
-        lats_poly = [coord[0] for coord in boundary_coords]
-        lons_poly = [coord[1] for coord in boundary_coords]
-
         value = area_stats.get(area, 0)
-        if max_value > min_value:
-            norm_value = (value - min_value) / (max_value - min_value)
-        else:
-            norm_value = 0.5
+        color = get_color_for_value(value, min_value, max_value)
 
-        # Color scale: blue (low) to red (high)
-        color_rgb = f"rgb({int(255*norm_value)}, {int(100*(1-norm_value))}, {int(255*(1-norm_value))})"
+        # Create feature for GeoJSON
+        feature = {
+            "type": "Feature",
+            "geometry": geometry,
+            "properties": {
+                "name": f"{area} - {PRICE_AREAS[area]}",
+                "value": f"{value:,.0f} kWh"
+            }
+        }
 
         # Highlight selected area
-        line_width = 3 if area == selected_area else 1
+        line_weight = 4 if area == selected_area else 2
         line_color = "black" if area == selected_area else "gray"
 
-        fig.add_trace(go.Scattermapbox(
-            lat=lats_poly,
-            lon=lons_poly,
-            mode='lines',
-            fill='toself',
-            fillcolor=color_rgb,
-            line=dict(width=line_width, color=line_color),
-            opacity=0.5,
-            name=area,
-            hoverinfo='text',
-            text=f"{area} - {PRICE_AREAS[area]}<br>Mean: {value:,.0f} kWh",
-            showlegend=True
-        ))
+        # Add GeoJSON with hover highlighting and tooltip
+        folium.GeoJson(
+            feature,
+            style_function=lambda x, c=color, lw=line_weight, lc=line_color: {
+                'fillColor': c,
+                'color': lc,
+                'weight': lw,
+                'fillOpacity': 0.5
+            },
+            highlight_function=lambda x: {'weight': 5, 'fillOpacity': 0.7},
+            tooltip=folium.GeoJsonTooltip(
+                fields=['name', 'value'],
+                aliases=['Area:', 'Energy:'],
+                localize=True
+            )
+        ).add_to(m)
 
     # Add city markers
-    fig.add_trace(go.Scattermapbox(
-        lat=lats,
-        lon=lons,
-        mode='markers+text',
-        marker=dict(size=12, color='darkblue'),
-        text=[area for area in PRICE_AREAS.keys()],
-        textposition='top center',
-        textfont=dict(size=10, color='black'),
-        hoverinfo='text',
-        hovertext=texts,
-        showlegend=False
-    ))
+    for area, city in PRICE_AREAS.items():
+        lat, lon = CITY_COORDS[city]
+        folium.Marker(
+            location=[lat, lon],
+            popup=f"{area} - {city}",
+            tooltip=f"{area}",
+            icon=folium.Icon(color='blue', icon='info-sign')
+        ).add_to(m)
 
-    # Update layout
-    fig.update_layout(
-        mapbox=dict(
-            style="open-street-map",
-            center=dict(lat=65.0, lon=13.0),
-            zoom=3.5
-        ),
-        height=600,
-        margin=dict(l=0, r=0, t=30, b=0),
-        title="Norwegian Price Areas - Energy Choropleth Map (NVE Official Boundaries)",
-        hovermode='closest'
-    )
+    # Add clicked coordinate marker if exists
+    if clicked_coords:
+        folium.Marker(
+            location=[clicked_coords[0], clicked_coords[1]],
+            popup=f"Selected: {clicked_coords[0]:.4f}°N, {clicked_coords[1]:.4f}°E",
+            tooltip="Selected Location",
+            icon=folium.Icon(color='red', icon='star')
+        ).add_to(m)
 
-    return fig
+    return m
 
 # ---------- Main UI ----------
 
 st.title("🗺️ Interactive Energy Map")
 st.markdown("""
 Visualize energy production or consumption across Norwegian price areas (NO1-NO5).
-The map uses choropleth coloring based on mean values over the selected time interval.
-Click on a price area to select coordinates for the Snow Drift analysis.
+
+**Select a price area from the dropdown below** - the map will update instantly to show:
+- Choropleth coloring based on mean energy values (blue = low, red = high)
+- Selected area highlighted with black border and red star marker
+- Coordinates automatically saved for Snow Drift analysis
 """)
 
 # Selection controls
@@ -300,27 +278,33 @@ elif time_preset == "Last Year":
 else:  # All Data
     start_date = datetime(2020, 1, 1, tzinfo=timezone.utc)  # Use earlier date to capture all available data
 
-# Price area selection
+# Price area selection (dropdown) - instant update
 selected_area = st.selectbox(
-    "Select Price Area",
+    "📍 Select Price Area",
     options=list(PRICE_AREAS.keys()),
-    format_func=lambda x: f"{x} - {PRICE_AREAS[x]}"
+    format_func=lambda x: f"{x} - {PRICE_AREAS[x]}",
+    help="Choose a price area to view statistics and save coordinates for Snow Drift analysis"
 )
 
-# Store coordinates in session state for Snow Drift page
-if selected_area:
-    city = PRICE_AREAS[selected_area]
-    lat, lon = CITY_COORDS[city]
-    st.session_state['map_selected_lat'] = lat
-    st.session_state['map_selected_lon'] = lon
-    st.session_state['map_selected_city'] = city
-    st.info(f"📍 Selected: {city} ({lat:.4f}°N, {lon:.4f}°E) - Coordinates saved for Snow Drift analysis")
+# Get coordinates for selected area
+city = PRICE_AREAS[selected_area]
+lat, lon = CITY_COORDS[city]
+
+# Save to session state for Snow Drift page
+st.session_state['map_clicked_lat'] = lat
+st.session_state['map_clicked_lon'] = lon
 
 # Compute statistics
 with st.spinner("Computing area statistics..."):
     area_stats = compute_area_statistics(data_type, start_date, end_date)
 
-# Display statistics
+# Get the value for selected area
+selected_area_value = area_stats.get(selected_area, 0)
+
+# Show current selection with value BEFORE map
+st.info(f"📍 Selected: **{selected_area} - {city}** ({lat:.4f}°N, {lon:.4f}°E) | Energy: **{selected_area_value:,.0f} kWh** | Coordinates saved for Snow Drift")
+
+# Display statistics for all areas
 st.markdown("### 📊 Area Statistics")
 cols = st.columns(5)
 for i, (area, value) in enumerate(area_stats.items()):
@@ -329,17 +313,59 @@ for i, (area, value) in enumerate(area_stats.items()):
 
 # Create and display map
 st.markdown("### 🗺️ Choropleth Map")
-fig = create_choropleth_map(area_stats, selected_area)
-st.plotly_chart(fig, use_container_width=True)
+
+# Show legend before map
+min_value = min(area_stats.values()) if area_stats.values() else 0
+max_value = max(area_stats.values()) if area_stats.values() else 1
+
+col_legend1, col_legend2 = st.columns([3, 1])
+with col_legend1:
+    st.caption("**Color Scale Legend:**")
+with col_legend2:
+    st.caption(f"Min: {min_value:,.0f} kWh → Max: {max_value:,.0f} kWh")
+
+# Color gradient HTML
+st.markdown(f"""
+<div style="
+    background: linear-gradient(to right,
+        rgb(0, 100, 255),
+        rgb(128, 50, 128),
+        rgb(255, 0, 0)
+    );
+    height: 25px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    margin-bottom: 10px;
+">
+</div>
+<p style="text-align: center; font-size: 12px; color: #666; margin-top: -5px;">
+    Blue (Low) ← → Red (High)
+</p>
+""", unsafe_allow_html=True)
+
+m = create_folium_map(area_stats, selected_area, (lat, lon))
+
+# Add CSS to remove focus outline on map
+st.markdown("""
+<style>
+iframe {
+    outline: none !important;
+    border: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Display map (height reduced, no event tracking to prevent loading on click)
+st_folium(m, width=800, height=450, returned_objects=[])
 
 # Additional info
 with st.expander("ℹ️ About This Map"):
     st.markdown("""
     **Features:**
+    - **Dropdown Selection**: Choose a price area to view and save coordinates for Snow Drift
     - **Choropleth Coloring**: Areas are colored based on mean energy values (blue = low, red = high)
     - **Price Area Boundaries**: Official NVE GeoJSON data for NO1-NO5 Elspot regions
-    - **Interactive**: Hover over areas to see detailed statistics
-    - **Coordinate Selection**: Select an area to save coordinates for Snow Drift calculations
+    - **Red Star Marker**: Shows your selected price area location
 
     **Price Areas:**
     - **NO1 (Oslo)**: Southeast Norway
@@ -351,16 +377,12 @@ with st.expander("ℹ️ About This Map"):
     **Data Sources:**
     - Energy Data: Elhub API via MongoDB Atlas
     - Price Area Boundaries: NVE (Norwegian Water Resources and Energy Directorate) GeoJSON
-
-    **Note:** Price area boundaries are official data from NVE's ElSpot_omraade layer retrieved via ArcGIS REST API.
     """)
 
 # Debug info
 if st.checkbox("Show Debug Info"):
     st.write("**Session State:**")
-    st.write(f"- Selected Area: {selected_area}")
-    st.write(f"- Latitude: {st.session_state.get('map_selected_lat', 'Not set')}")
-    st.write(f"- Longitude: {st.session_state.get('map_selected_lon', 'Not set')}")
-    st.write(f"- City: {st.session_state.get('map_selected_city', 'Not set')}")
+    st.write(f"- Clicked Latitude: {st.session_state.get('map_clicked_lat', 'Not set')}")
+    st.write(f"- Clicked Longitude: {st.session_state.get('map_clicked_lon', 'Not set')}")
     st.write("**Area Statistics:**")
     st.write(area_stats)
