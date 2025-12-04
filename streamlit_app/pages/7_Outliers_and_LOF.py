@@ -99,7 +99,7 @@ with tab_spc:
         y=s,
         mode='lines',
         name='Temperature (°C)',
-        line=dict(width=1.5, color='blue')
+        line=dict(width=1.5, color='#1f77b4')
     ))
 
     # Add SPC centerline (median/trend)
@@ -108,7 +108,7 @@ with tab_spc:
         y=center_line,
         mode='lines',
         name='SPC Centerline (Median)',
-        line=dict(color='green', width=2, dash='solid')
+        line=dict(color='goldenrod', width=2, dash='solid')
     ))
 
     # Add SPC upper control limit with shading
@@ -117,7 +117,7 @@ with tab_spc:
         y=hi_bound,
         mode='lines',
         name=f'Upper Control Limit (+{k_sigma}σ)',
-        line=dict(color='red', width=3, dash='dash'),
+        line=dict(color='#d62728', width=3, dash='dash'),
         showlegend=True
     ))
 
@@ -127,9 +127,9 @@ with tab_spc:
         y=lo_bound,
         mode='lines',
         name=f'Lower Control Limit (-{k_sigma}σ)',
-        line=dict(color='red', width=3, dash='dash'),
+        line=dict(color='#d62728', width=3, dash='dash'),
         fill='tonexty',
-        fillcolor='rgba(255, 0, 0, 0.1)',
+        fillcolor='rgba(214, 39, 40, 0.1)',
         showlegend=True
     ))
 
