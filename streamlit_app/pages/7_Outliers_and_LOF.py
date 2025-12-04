@@ -111,25 +111,25 @@ with tab_spc:
         line=dict(color='goldenrod', width=2, dash='solid')
     ))
 
-    # Add SPC upper control limit with shading
+    # Add SPC lower control limit first (for fill to work correctly)
+    fig.add_trace(go.Scatter(
+        x=wx["time"],
+        y=lo_bound,
+        mode='lines',
+        name=f'Lower Control Limit (-{k_sigma}σ)',
+        line=dict(color='#1f77b4', width=3, dash='dash'),
+        showlegend=True
+    ))
+
+    # Add SPC upper control limit with shading between limits
     fig.add_trace(go.Scatter(
         x=wx["time"],
         y=hi_bound,
         mode='lines',
         name=f'Upper Control Limit (+{k_sigma}σ)',
         line=dict(color='#d62728', width=3, dash='dash'),
-        showlegend=True
-    ))
-
-    # Add SPC lower control limit with shading
-    fig.add_trace(go.Scatter(
-        x=wx["time"],
-        y=lo_bound,
-        mode='lines',
-        name=f'Lower Control Limit (-{k_sigma}σ)',
-        line=dict(color='#d62728', width=3, dash='dash'),
         fill='tonexty',
-        fillcolor='rgba(214, 39, 40, 0.1)',
+        fillcolor='rgba(200, 200, 200, 0.15)',
         showlegend=True
     ))
 
